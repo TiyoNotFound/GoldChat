@@ -11,8 +11,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Heart, MessageCircle, Share, Upload, LogOut } from "lucide-react"
-import { getPosts, createPost, likePost, uploadImage } from "@/lib/database"
+import { Heart, MessageCircle, Upload, LogOut, Settings, ChevronDown, ChevronUp } from "lucide-react"
+import { getPosts, createPost, likePost, uploadImage, getLikedPosts } from "@/lib/database"
+import { CommentSection } from "@/components/comment-section"
+import { ShareDialog } from "@/components/share-dialog"
 import type { Post } from "@/lib/supabase"
 
 export default function MonoForum() {
@@ -22,6 +24,8 @@ export default function MonoForum() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [likedPosts, setLikedPosts] = useState<string[]>([])
+  const [expandedComments, setExpandedComments] = useState<string[]>([])
   const { user, profile, isLoading, profileLoading, signOut } = useAuth()
   const router = useRouter()
 
@@ -39,20 +43,22 @@ export default function MonoForum() {
     }
   }, [user, profile, isLoading, profileLoading, router])
 
-  // Fetch posts
+  // Fetch posts and liked posts
   useEffect(() => {
-    async function loadPosts() {
+    async function loadData() {
       try {
-        const data = await getPosts()
-        setPosts(data)
+        const [postsData, likedPostsData] = await Promise.all([getPosts(), user ? getLikedPosts() : []])
+
+        setPosts(postsData)
+        setLikedPosts(likedPostsData)
       } catch (err: any) {
-        console.error("Error loading posts:", err)
+        console.error("Error loading data:", err)
         setError("Failed to load posts")
       }
     }
 
     if (user && profile) {
-      loadPosts()
+      loadData()
     }
   }, [user, profile])
 
@@ -107,13 +113,29 @@ export default function MonoForum() {
   }
 
   const handleLikePost = async (postId: string) => {
+    if (!user) return
+
     try {
-      await likePost(postId)
+      const { liked } = await likePost(postId)
 
       // Update local state
-      setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: post.likes + 1 } : post)))
+      if (liked) {
+        setLikedPosts([...likedPosts, postId])
+        setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: post.likes + 1 } : post)))
+      } else {
+        setLikedPosts(likedPosts.filter((id) => id !== postId))
+        setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: Math.max(0, post.likes - 1) } : post)))
+      }
     } catch (err) {
       console.error("Error liking post:", err)
+    }
+  }
+
+  const toggleComments = (postId: string) => {
+    if (expandedComments.includes(postId)) {
+      setExpandedComments(expandedComments.filter((id) => id !== postId))
+    } else {
+      setExpandedComments([...expandedComments, postId])
     }
   }
 
@@ -158,6 +180,10 @@ export default function MonoForum() {
               </Avatar>
               <span className="text-sm font-medium text-gray-700">{profile.username}</span>
             </div>
+            <Button variant="ghost" size="sm" onClick={() => router.push("/profile/edit")}>
+              <Settings className="h-4 w-4" />
+              <span className="sr-only">Edit Profile</span>
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => signOut()}>
               <LogOut className="h-4 w-4" />
               <span className="sr-only">Sign out</span>
@@ -279,20 +305,43 @@ export default function MonoForum() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="p-0 h-auto hover:text-red-500"
+                          className={`p-0 h-auto ${likedPosts.includes(post.id) ? "text-red-500" : "hover:text-red-500"}`}
                           onClick={() => handleLikePost(post.id)}
                         >
-                          <Heart className="h-4 w-4 mr-1" />
+                          <Heart
+                            className="h-4 w-4 mr-1"
+                            fill={likedPosts.includes(post.id) ? "currentColor" : "none"}
+                          />
                           {post.likes}
                         </Button>
-                        <Button variant="ghost" size="sm" className="p-0 h-auto hover:text-blue-500">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-0 h-auto hover:text-blue-500"
+                          onClick={() => toggleComments(post.id)}
+                        >
                           <MessageCircle className="h-4 w-4 mr-1" />
                           {post.comments}
+                          {expandedComments.includes(post.id) ? (
+                            <ChevronUp className="h-3 w-3 ml-1" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3 ml-1" />
+                          )}
                         </Button>
-                        <Button variant="ghost" size="sm" className="p-0 h-auto hover:text-green-500">
-                          <Share className="h-4 w-4" />
-                        </Button>
+                        <ShareDialog postId={post.id} content={post.content} />
                       </div>
+
+                      {/* Comments Section */}
+                      {expandedComments.includes(post.id) && (
+                        <div className="mt-4">
+                          <CommentSection
+                            postId={post.id}
+                            onCommentCountChange={(count) => {
+                              setPosts(posts.map((p) => (p.id === post.id ? { ...p, comments: count } : p)))
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>

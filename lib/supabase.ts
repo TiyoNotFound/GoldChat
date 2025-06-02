@@ -34,3 +34,20 @@ export type Post = {
   username: string
   avatar_url: string
 }
+
+export type Comment = {
+  id: string
+  post_id: string
+  user_id: string
+  content: string
+  username: string
+  avatar_url: string
+  created_at: string
+}
+
+export type LikeRecord = {
+  id: string
+  post_id: string
+  user_id: string
+  created_at: string
+}

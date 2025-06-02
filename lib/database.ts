@@ -1,4 +1,4 @@
-import { supabase, type Profile, type Post } from "./supabase"
+import { supabase, type Profile, type Post, type Comment } from "./supabase"
 
 // User profile operations
 export async function createProfile(profile: Omit<Profile, "id" | "created_at">) {
@@ -84,10 +84,139 @@ export async function getPosts() {
   return data as Post[]
 }
 
+// Like operations
 export async function likePost(postId: string) {
-  const { error } = await supabase.rpc("increment_likes", { post_id: postId })
+  const { data: user, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user.user) {
+    throw new Error("User not authenticated")
+  }
+
+  // Check if user already liked this post
+  const { data: existingLike } = await supabase
+    .from("likes")
+    .select("id")
+    .eq("post_id", postId)
+    .eq("user_id", user.user.id)
+    .single()
+
+  if (existingLike) {
+    // User already liked this post, so unlike it
+    await supabase.from("likes").delete().eq("id", existingLike.id)
+
+    // Decrement post likes count
+    await supabase
+      .from("posts")
+      .update({ likes: supabase.rpc("decrement", { x: 1 }) })
+      .eq("id", postId)
+
+    return { liked: false }
+  } else {
+    // User hasn't liked this post, so like it
+    await supabase.from("likes").insert({
+      post_id: postId,
+      user_id: user.user.id,
+    })
+
+    // Increment post likes count
+    await supabase
+      .from("posts")
+      .update({ likes: supabase.rpc("increment", { x: 1 }) })
+      .eq("id", postId)
+
+    return { liked: true }
+  }
+}
+
+export async function checkIfLiked(postId: string) {
+  const { data: user, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user.user) {
+    return false
+  }
+
+  const { data } = await supabase.from("likes").select("id").eq("post_id", postId).eq("user_id", user.user.id).single()
+
+  return !!data
+}
+
+export async function getLikedPosts() {
+  const { data: user, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user.user) {
+    throw new Error("User not authenticated")
+  }
+
+  const { data, error } = await supabase.from("likes").select("post_id").eq("user_id", user.user.id)
 
   if (error) throw error
+
+  return (data || []).map((like) => like.post_id)
+}
+
+// Comment operations
+export async function createComment(postId: string, content: string) {
+  const { data: user, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user.user) {
+    throw new Error("User not authenticated")
+  }
+
+  // Get the user's profile to include username and avatar
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("username, avatar_url")
+    .eq("id", user.user.id)
+    .single()
+
+  if (profileError) throw profileError
+
+  // Insert the comment
+  const { error } = await supabase.from("comments").insert({
+    post_id: postId,
+    user_id: user.user.id,
+    content,
+    username: profile.username,
+    avatar_url: profile.avatar_url,
+  })
+
+  if (error) throw error
+
+  // Increment the comments count on the post
+  await supabase
+    .from("posts")
+    .update({ comments: supabase.rpc("increment", { x: 1 }) })
+    .eq("id", postId)
+}
+
+export async function getComments(postId: string) {
+  const { data, error } = await supabase
+    .from("comments")
+    .select("*")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+
+  return data as Comment[]
+}
+
+export async function deleteComment(commentId: string, postId: string) {
+  const { data: user, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user.user) {
+    throw new Error("User not authenticated")
+  }
+
+  const { error } = await supabase.from("comments").delete().eq("id", commentId).eq("user_id", user.user.id)
+
+  if (error) throw error
+
+  // Decrement the comments count on the post
+  await supabase
+    .from("posts")
+    .update({ comments: supabase.rpc("decrement", { x: 1 }) })
+    .eq("id", postId)
 }
 
 // File upload
