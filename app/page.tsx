@@ -22,22 +22,22 @@ export default function MonoForum() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, isLoading, profileLoading, signOut } = useAuth()
   const router = useRouter()
 
-  // Redirect to auth if not logged in
+  // Redirect to auth if not logged in (only after auth is checked)
   useEffect(() => {
-    if (!user && !loading) {
+    if (!isLoading && !user) {
       router.push("/auth")
     }
-  }, [user, loading, router])
+  }, [user, isLoading, router])
 
-  // Redirect to profile setup if logged in but no profile
+  // Redirect to profile setup if logged in but no profile (only after profile check is complete)
   useEffect(() => {
-    if (user && !profile && !loading) {
+    if (!isLoading && user && !profileLoading && !profile) {
       router.push("/profile/setup")
     }
-  }, [user, profile, loading, router])
+  }, [user, profile, isLoading, profileLoading, router])
 
   // Fetch posts
   useEffect(() => {
@@ -127,8 +127,21 @@ export default function MonoForum() {
     return `${Math.floor(diffInMinutes / 1440)}d`
   }
 
+  // Show loading state
+  if (isLoading || profileLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // If not logged in or no profile, the redirect will happen in useEffect
   if (!user || !profile) {
-    return null // Will redirect in useEffect
+    return null
   }
 
   return (

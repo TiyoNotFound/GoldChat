@@ -12,6 +12,7 @@ type AuthContextType = {
   profile: Profile | null
   session: Session | null
   isLoading: boolean
+  profileLoading: boolean
   signUp: (email: string, password: string) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [profileLoading, setProfileLoading] = useState(true)
 
   useEffect(() => {
     // Get initial session
@@ -54,21 +56,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fetchProfile(user.id)
     } else {
       setProfile(null)
+      setProfileLoading(false)
     }
   }, [user])
 
   async function fetchProfile(userId: string) {
+    setProfileLoading(true)
     try {
       const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
       if (error) {
         console.error("Error fetching profile:", error)
-        return
+        setProfile(null)
+      } else {
+        setProfile(data as Profile)
       }
-
-      setProfile(data as Profile)
     } catch (error) {
       console.error("Error fetching profile:", error)
+      setProfile(null)
+    } finally {
+      setProfileLoading(false)
     }
   }
 
@@ -92,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     session,
     isLoading,
+    profileLoading,
     signUp,
     signIn,
     signOut,

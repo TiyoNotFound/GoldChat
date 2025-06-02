@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { createProfile, uploadImage } from "@/lib/database"
+import { createProfile, uploadImage, getProfile } from "@/lib/database"
 
 export default function ProfileSetupPage() {
   const [username, setUsername] = useState("")
@@ -20,13 +20,47 @@ export default function ProfileSetupPage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { user, setProfile } = useAuth()
+  const [checkingProfile, setCheckingProfile] = useState(true)
+  const { user, profile, setProfile, isLoading } = useAuth()
   const router = useRouter()
 
-  if (!user) {
-    router.push("/auth")
-    return null
-  }
+  // Check if user already has a profile
+  useEffect(() => {
+    async function checkExistingProfile() {
+      if (!user) return
+
+      try {
+        setCheckingProfile(true)
+        const existingProfile = await getProfile(user.id)
+        if (existingProfile) {
+          // User already has a profile, redirect to home
+          setProfile(existingProfile)
+          router.push("/")
+        }
+      } catch (err) {
+        // No profile exists, continue with setup
+        console.log("No existing profile found, continuing with setup")
+      } finally {
+        setCheckingProfile(false)
+      }
+    }
+
+    if (user && !profile) {
+      checkExistingProfile()
+    } else if (profile) {
+      // If profile already exists in context, redirect to home
+      router.push("/")
+    } else {
+      setCheckingProfile(false)
+    }
+  }, [user, profile, router, setProfile])
+
+  // Redirect to auth if not logged in
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/auth")
+    }
+  }, [user, isLoading, router])
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -46,6 +80,8 @@ export default function ProfileSetupPage() {
     setError(null)
 
     try {
+      if (!user) throw new Error("User not authenticated")
+
       let avatarUrl = ""
 
       if (avatarFile) {
@@ -74,6 +110,23 @@ export default function ProfileSetupPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Show loading state
+  if (isLoading || checkingProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // If not logged in, the redirect will happen in useEffect
+  if (!user) {
+    return null
   }
 
   return (
